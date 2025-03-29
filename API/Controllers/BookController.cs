@@ -10,86 +10,102 @@ namespace Server.API.Controllers;
 [Route("api/[controller]")]
 public class BookController(AppDbContext context, ILogger<BookController> logger) : ControllerBase
 {
-    private readonly ILogger<BookController> _logger = logger;
-
     [HttpGet]
     public async Task<ActionResult<IEnumerable<BookDto>>> GetBooks()
     {
-        var books = await context.Books
-            .Include(b => b.Authors)
-            .Select(b => new BookDto
-            {
-                BookId = b.BookId,
-                Title = b.Title,
-                ISBN = b.ISBN,
-                PublicationYear = b.PublicationYear,
-                Publisher = b.Publisher,
-                CoverImageUrl = b.CoverImageUrl,
-                Description = b.Description,
-                Authors = b.Authors.Select(a => a.Name).ToList()
-            })
-            .ToListAsync();
+        try
+        {
+            var books = await context.Books
+                .AsNoTracking()
+                .Include(b => b.Authors)
+                .Select(b => new BookDto
+                {
+                    BookId = b.BookId,
+                    Title = b.Title,
+                    ISBN = b.ISBN,
+                    PublicationYear = b.PublicationYear,
+                    Publisher = b.Publisher,
+                    CoverImageUrl = b.CoverImageUrl,
+                    Description = b.Description,
+                    Authors = b.Authors.Select(a => a.Name).ToList()
+                })
+                .ToListAsync();
 
-        return Ok(books);
+            return Ok(books);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error getting all books");
+            return StatusCode(500, "Internal Server Error");
+        }
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<BookDetailDto>> GetBook(int id)
     {
-        var book = await context.Books
-            .Include(b => b.Authors)
-            .Include(b => b.Reviews)
-            .ThenInclude(r => r.User)
-            .FirstOrDefaultAsync(b => b.BookId == id);
-
-        if (book == null)
+        try
         {
-            return NotFound();
+            var book = await context.Books
+                .AsNoTracking()
+                .Include(b => b.Authors)
+                .Include(b => b.Reviews)
+                .ThenInclude(r => r.User)
+                .FirstOrDefaultAsync(b => b.BookId == id);
+
+            if (book == null)
+            {
+                return NotFound("Book not found");
+            }
+
+            var bookDetail = new BookDetailDto
+            {
+                BookId = book.BookId,
+                Title = book.Title,
+                ISBN = book.ISBN,
+                PublicationYear = book.PublicationYear,
+                Publisher = book.Publisher,
+                CoverImageUrl = book.CoverImageUrl,
+                Description = book.Description,
+                Authors = book.Authors.Select(a => new AuthorDto
+                {
+                    AuthorId = a.AuthorId,
+                    Name = a.Name
+                }).ToList(),
+                Reviews = book.Reviews.Select(r => new ReviewDto
+                {
+                    ReviewId = r.ReviewId,
+                    Rating = r.Rating,
+                    Content = r.Content,
+                    CreatedAt = r.CreatedAt,
+                    UserName = r.User.Username
+                }).ToList()
+            };
+
+            return Ok(bookDetail);
         }
-
-        var bookDetail = new BookDetailDto
+        catch (Exception ex)
         {
-            BookId = book.BookId,
-            Title = book.Title,
-            ISBN = book.ISBN,
-            PublicationYear = book.PublicationYear,
-            Publisher = book.Publisher,
-            CoverImageUrl = book.CoverImageUrl,
-            Description = book.Description,
-            Authors = book.Authors.Select(a => new AuthorDto
-            {
-                AuthorId = a.AuthorId,
-                Name = a.Name
-            }).ToList(),
-            Reviews = book.Reviews.Select(r => new ReviewDto
-            {
-                ReviewId = r.ReviewId,
-                Rating = r.Rating,
-                Content = r.Content,
-                CreatedAt = r.CreatedAt,
-                UserName = r.User.Username
-            }).ToList()
-        };
-
-        return Ok(bookDetail);
+            logger.LogError(ex, "Error getting book with ID: {BookId}", id);
+            return StatusCode(500, "Internal Server Error");
+        }
     }
 
     [HttpPost]
     public async Task<ActionResult<BookDto>> CreateBook(CreateBookDto createBookDto)
     {
-        var book = new Book
+        try
         {
-            Title = createBookDto.Title,
-            ISBN = createBookDto.ISBN,
-            PublicationYear = createBookDto.PublicationYear,
-            Publisher = createBookDto.Publisher,
-            CoverImageUrl = createBookDto.CoverImageUrl,
-            Description = createBookDto.Description,
-            Authors = new List<Author>()
-        };
+            var book = new Book
+            {
+                Title = createBookDto.Title,
+                ISBN = createBookDto.ISBN,
+                PublicationYear = createBookDto.PublicationYear,
+                Publisher = createBookDto.Publisher,
+                CoverImageUrl = createBookDto.CoverImageUrl,
+                Description = createBookDto.Description,
+                Authors = new List<Author>()
+            };
 
-        if (createBookDto.AuthorIds != null && createBookDto.AuthorIds.Any())
-        {
             var authors = await context.Authors
                 .Where(a => createBookDto.AuthorIds.Contains(a.AuthorId))
                 .ToListAsync();
@@ -98,45 +114,50 @@ public class BookController(AppDbContext context, ILogger<BookController> logger
             {
                 book.Authors.Add(author);
             }
+
+            context.Books.Add(book);
+            await context.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetBook), new { id = book.BookId }, new BookDto
+            {
+                BookId = book.BookId,
+                Title = book.Title,
+                ISBN = book.ISBN,
+                PublicationYear = book.PublicationYear,
+                Publisher = book.Publisher,
+                CoverImageUrl = book.CoverImageUrl,
+                Description = book.Description,
+                Authors = book.Authors.Select(a => a.Name).ToList()
+            });
         }
-
-        context.Books.Add(book);
-        await context.SaveChangesAsync();
-
-        return CreatedAtAction(nameof(GetBook), new { id = book.BookId }, new BookDto
+        catch (Exception ex)
         {
-            BookId = book.BookId,
-            Title = book.Title,
-            ISBN = book.ISBN,
-            PublicationYear = book.PublicationYear,
-            Publisher = book.Publisher,
-            CoverImageUrl = book.CoverImageUrl,
-            Description = book.Description,
-            Authors = book.Authors.Select(a => a.Name).ToList()
-        });
+            logger.LogError(ex, "Error creating book");
+            return StatusCode(500, "Internal Server Error");
+        }
     }
 
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateBook(int id, UpdateBookDto updateBookDto)
     {
-        var book = await context.Books
-            .Include(b => b.Authors)
-            .FirstOrDefaultAsync(b => b.BookId == id);
-
-        if (book == null)
+        try
         {
-            return NotFound();
-        }
+            var book = await context.Books
+                .Include(b => b.Authors)
+                .FirstOrDefaultAsync(b => b.BookId == id);
 
-        book.Title = updateBookDto.Title ?? book.Title;
-        book.ISBN = updateBookDto.ISBN ?? book.ISBN;
-        book.PublicationYear = updateBookDto.PublicationYear ?? book.PublicationYear;
-        book.Publisher = updateBookDto.Publisher ?? book.Publisher;
-        book.CoverImageUrl = updateBookDto.CoverImageUrl ?? book.CoverImageUrl;
-        book.Description = updateBookDto.Description ?? book.Description;
+            if (book == null)
+            {
+                return NotFound("Book not found");
+            }
 
-        if (updateBookDto.AuthorIds != null)
-        {
+            book.Title = updateBookDto.Title;
+            book.ISBN = updateBookDto.ISBN;
+            book.PublicationYear = updateBookDto.PublicationYear;
+            book.Publisher = updateBookDto.Publisher;
+            book.CoverImageUrl = updateBookDto.CoverImageUrl;
+            book.Description = updateBookDto.Description;
+
             book.Authors.Clear();
 
             var authors = await context.Authors
@@ -147,20 +168,22 @@ public class BookController(AppDbContext context, ILogger<BookController> logger
             {
                 book.Authors.Add(author);
             }
-        }
 
-        try
-        {
             await context.SaveChangesAsync();
         }
         catch (DbUpdateConcurrencyException)
         {
             if (!BookExists(id))
             {
-                return NotFound();
+                return NotFound("Book not found");
             }
 
-            throw;
+            return StatusCode(500, "Internal Server Error - Concurrency conflict");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error updating book with ID: {BookId}", id);
+            return StatusCode(500, "Internal Server Error");
         }
 
         return NoContent();
@@ -169,16 +192,24 @@ public class BookController(AppDbContext context, ILogger<BookController> logger
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteBook(int id)
     {
-        var book = await context.Books.FindAsync(id);
-        if (book == null)
+        try
         {
-            return NotFound();
+            var book = await context.Books.FindAsync(id);
+            if (book == null)
+            {
+                return NotFound("Book not found");
+            }
+
+            context.Books.Remove(book);
+            await context.SaveChangesAsync();
+
+            return NoContent();
         }
-
-        context.Books.Remove(book);
-        await context.SaveChangesAsync();
-
-        return NoContent();
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error deleting book with ID: {BookId}", id);
+            return StatusCode(500, "Internal Server Error");
+        }
     }
 
     private bool BookExists(int id)

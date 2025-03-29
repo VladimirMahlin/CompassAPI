@@ -10,50 +10,66 @@ namespace Server.API.Controllers;
 [Route("api/[controller]")]
 public class AuthorController(AppDbContext context, ILogger<AuthorController> logger) : ControllerBase
 {
-    private readonly ILogger<AuthorController> _logger = logger;
-
     [HttpGet]
     public async Task<ActionResult<IEnumerable<AuthorDto>>> GetAuthors()
     {
-        var authors = await context.Authors
-            .Select(a => new AuthorDto
-            {
-                AuthorId = a.AuthorId,
-                Name = a.Name,
-                Biography = a.Biography
-            })
-            .ToListAsync();
+        try
+        {
+            var authors = await context.Authors
+                .AsNoTracking()
+                .Select(a => new AuthorDto
+                {
+                    AuthorId = a.AuthorId,
+                    Name = a.Name,
+                    Biography = a.Biography
+                })
+                .ToListAsync();
 
-        return Ok(authors);
+            return Ok(authors);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error getting all authors");
+            return StatusCode(500, "Internal Server Error");
+        }
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<AuthorDetailDto>> GetAuthor(int id)
     {
-        var author = await context.Authors
-            .Include(a => a.Books)
-            .FirstOrDefaultAsync(a => a.AuthorId == id);
-
-        if (author == null)
+        try
         {
-            return NotFound();
-        }
+            var author = await context.Authors
+                .AsNoTracking()
+                .Include(a => a.Books)
+                .FirstOrDefaultAsync(a => a.AuthorId == id);
 
-        var authorDetail = new AuthorDetailDto
-        {
-            AuthorId = author.AuthorId,
-            Name = author.Name,
-            Biography = author.Biography,
-            Books = author.Books.Select(b => new BookBriefDto
+            if (author == null)
             {
-                BookId = b.BookId,
-                Title = b.Title,
-                CoverImageUrl = b.CoverImageUrl,
-                PublicationYear = b.PublicationYear
-            }).ToList()
-        };
+                return NotFound("Author not found");
+            }
 
-        return Ok(authorDetail);
+            var authorDetail = new AuthorDetailDto
+            {
+                AuthorId = author.AuthorId,
+                Name = author.Name,
+                Biography = author.Biography,
+                Books = author.Books.Select(b => new BookBriefDto
+                {
+                    BookId = b.BookId,
+                    Title = b.Title,
+                    CoverImageUrl = b.CoverImageUrl,
+                    PublicationYear = b.PublicationYear
+                }).ToList()
+            };
+
+            return Ok(authorDetail);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error getting author");
+            return StatusCode(500, "Internal Server Error");
+        }
     }
 
     [HttpPost]

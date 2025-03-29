@@ -48,7 +48,7 @@ public class UpdateBookDto
 {
     public string Title { get; set; }
     public string ISBN { get; set; }
-    public int? PublicationYear { get; set; }
+    public int PublicationYear { get; set; }
     public string Publisher { get; set; }
     public string CoverImageUrl { get; set; }
     public string Description { get; set; }
