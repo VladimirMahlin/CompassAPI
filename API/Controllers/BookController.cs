@@ -106,13 +106,19 @@ public class BookController(AppDbContext context, ILogger<BookController> logger
                 Authors = new List<Author>()
             };
 
-            var authors = await context.Authors
-                .Where(a => createBookDto.AuthorIds.Contains(a.AuthorId))
-                .ToListAsync();
-
-            foreach (var author in authors)
+            foreach (var authorName in createBookDto.AuthorNames)
             {
-                book.Authors.Add(author);
+                var existingAuthor = await context.Authors.FirstOrDefaultAsync(a => a.Name == authorName);
+                if (existingAuthor != null)
+                {
+                    book.Authors.Add(existingAuthor);
+                }
+                else
+                {
+                    var newAuthor = new Author { Name = authorName, Biography = ""};
+                    context.Authors.Add(newAuthor);
+                    book.Authors.Add(newAuthor);
+                }
             }
 
             context.Books.Add(book);

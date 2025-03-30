@@ -41,7 +41,7 @@ public class CreateBookDto
     public string Publisher { get; set; }
     public string CoverImageUrl { get; set; }
     public string Description { get; set; }
-    public List<int> AuthorIds { get; set; }
+    public List<string> AuthorNames { get; set; } // Changed to names
 }
 
 public class UpdateBookDto
